@@ -165,12 +165,51 @@
         .btn-confirm-modal { background: #ff3b30; color: #fff; }
         .btn-confirm-modal:hover { background: #ff453a; }
 
-        /* Mobile pra não cagar o layout */
         @media (max-width: 480px) {
             .painel-box { padding: 20px; width: 92%; }
             .nome-cara { font-size: 16px; }
             .btn-acao { padding: 11px; font-size: 11px; }
         }
+
+        /* Tela de Bloqueio por Pagamento - DESIGN IDÊNTICO AO SITE */
+        #bloqueio-pagamento {
+            position: fixed; inset: 0; z-index: 99999;
+            display: flex; align-items: center; justify-content: center;
+            opacity: 0; visibility: hidden; transition: 0.6s cubic-bezier(0.23, 1, 0.32, 1);
+        }
+        #bloqueio-pagamento.show { opacity: 1; visibility: visible; }
+        
+        /* Fundo identico ao site */
+        #bloqueio-pagamento .bg-bloq {
+            position: absolute; inset: 0; background-image: url('Fundo2.png');
+            background-size: cover; background-position: center;
+            z-index: 0;
+        }
+        #bloqueio-pagamento .bg-bloq-escuro {
+            position: absolute; inset: 0; background: rgba(0,0,0,0.7); z-index: 1;
+        }
+
+        .card-bloqueio {
+            position: relative; z-index: 2;
+            background: rgba(0, 0, 0, 0.7);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            padding: 45px 30px; border-radius: 35px; width: 92%; max-width: 380px; text-align: center;
+            backdrop-filter: blur(45px); -webkit-backdrop-filter: blur(45px);
+            box-shadow: 0 25px 60px rgba(0, 0, 0, 0.6);
+        }
+        .pix-txt { 
+            color: #fff; font-size: 14px; font-weight: 600; margin-bottom: 25px; line-height: 1.7;
+            background: rgba(255,255,255,0.06); padding: 22px; border-radius: 20px;
+            border: 1px solid rgba(255,255,255,0.08);
+        }
+        .btn-pix {
+            width: 100%; height: 58px; border: none; border-radius: 20px;
+            background: #fff; color: #000; font-weight: 900; cursor: pointer;
+            text-transform: uppercase; letter-spacing: 2px; transition: 0.3s;
+            box-shadow: 0 10px 20px rgba(255,255,255,0.1);
+        }
+        .btn-pix.copiado { background: #00ff78; color: #000; letter-spacing: 3px; }
+        .btn-pix:active { transform: scale(0.95); }
     </style>
 </head>
 <body id="page-corpo" oncontextmenu="return false;">
@@ -203,6 +242,24 @@
             </div>
         </div>
         <div class="deck-cards" id="lista-marcada"></div>
+    </div>
+
+    <!-- Tela de Bloqueio - DESIGN IDENTICO AO SITE -->
+    <div id="bloqueio-pagamento">
+        <div class="bg-bloq"></div>
+        <div class="bg-bloq-escuro"></div>
+        <div class="card-bloqueio">
+            <div style="font-size: 45px; margin-bottom: 25px; filter: drop-shadow(0 0 15px rgba(255,255,255,0.3));">💎</div>
+            <div style="color: #fff; font-size: 19px; font-weight: 900; margin-bottom: 20px; text-transform: uppercase; letter-spacing: 3px;">Acesso Suspenso</div>
+            <div class="pix-txt">
+                Você atingiu o limite do seu plano.<br><br>
+                Pagar no PIX:<br>
+                <span style="color:#00ff78; word-break: break-all; font-weight:800;">railanebastossouza@gmail.com</span><br><br>
+                Valor: <span style="font-size:20px; font-weight:900; color:#fff;">R$ 30,00</span>
+            </div>
+            <button class="btn-pix" id="btn-pix-copia" onclick="copiaPix()">Copiar Chave PIX</button>
+            <div style="margin-top: 25px; color: rgba(255,255,255,0.35); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px;">Liberação imediata após o pagamento</div>
+        </div>
     </div>
 
     <!-- Modal de Confirmação Customizado -->
@@ -278,8 +335,47 @@
                         txt.style.color = "rgba(255,255,255,0.5)";
                     }
                 });
+
+                // Trava de Segurança Remota
+                database.ref('config/isBlocked').on('value', (snap) => {
+                    const bloqueio = document.getElementById('bloqueio-pagamento');
+                    if (snap.val() === true) {
+                        bloqueio.classList.add('show');
+                    } else {
+                        bloqueio.classList.remove('show');
+                    }
+                });
             }
         } catch (e) { console.log("Firebase no painel off."); }
+
+        function copiaPix() {
+            const pix = "railanebastossouza@gmail.com";
+            const btn = document.getElementById('btn-pix-copia');
+            navigator.clipboard.writeText(pix).then(() => {
+                btn.innerText = "✅ PIX Copiado!";
+                btn.classList.add('copiado');
+                showAviso("Chave PIX copiada!", "📋");
+                setTimeout(() => {
+                    btn.innerText = "Copiar Chave PIX";
+                    btn.classList.remove('copiado');
+                }, 3000);
+            }).catch(() => {
+                // Fallback para navegadores sem suporte a clipboard
+                const t = document.createElement('textarea');
+                t.value = pix;
+                document.body.appendChild(t);
+                t.select();
+                document.execCommand('copy');
+                document.body.removeChild(t);
+                btn.innerText = "✅ PIX Copiado!";
+                btn.classList.add('copiado');
+                showAviso("Chave PIX copiada!", "📋");
+                setTimeout(() => {
+                    btn.innerText = "Copiar Chave PIX";
+                    btn.classList.remove('copiado');
+                }, 3000);
+            });
+        }
 
         let id_agora = null;
         let confirmPromiseResolve = null;
