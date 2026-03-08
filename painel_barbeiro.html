@@ -217,6 +217,22 @@
         </div>
     </div>
 
+    <!-- Modal de Confirmação com Preço -->
+    <div style="position:fixed; inset:0; background:rgba(0,0,0,0.85); backdrop-filter:blur(30px); z-index:1500; display:flex; align-items:center; justify-content:center; opacity:0; visibility:hidden; transition:0.3s;" id="modal-confirm-preco">
+        <div style="background:rgba(22,22,22,0.98); border:1px solid rgba(255,255,255,0.15); padding:35px; border-radius:35px; width:88%; max-width:320px; text-align:center;">
+            <div style="color:#fff; font-size:15px; font-weight:900; margin-bottom:10px; text-transform:uppercase; letter-spacing:1px;" id="titulo-confirm">Confirmar Agendamento</div>
+            <div style="color:rgba(255,255,255,0.5); font-size:12px; margin-bottom:25px;">Informe o valor do serviço:</div>
+            
+            <div style="position:relative; margin-bottom:25px;">
+                <span style="position:absolute; left:20px; top:50%; transform:translateY(-50%); color:rgba(255,255,255,0.5); font-weight:800;">R$</span>
+                <input type="text" style="width:100%; height:55px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15); border-radius:18px; color:#fff; padding:0 18px 0 45px; font-size:22px; font-weight:800; outline:none;" id="input-preco" placeholder="0,00" autocomplete="off" spellcheck="false">
+            </div>
+
+            <button style="width:100%; height:52px; border:none; border-radius:18px; background:#fff; color:#000; font-weight:900; cursor:pointer;" id="btn-salva-confirm">CONFIRMAR AGORA</button>
+            <div style="margin-top:20px; color:rgba(255,255,255,0.35); font-size:12px; cursor:pointer;" onclick="fechaPreco()">CANCELAR</div>
+        </div>
+    </div>
+
     <!-- Modal pra mudar horário -->
     <div style="position:fixed; inset:0; background:rgba(0,0,0,0.85); backdrop-filter:blur(30px); z-index:1000; display:flex; align-items:center; justify-content:center; opacity:0; visibility:hidden; transition:0.3s;" id="modal-hora">
         <div style="background:rgba(22,22,22,0.98); border:1px solid rgba(255,255,255,0.15); padding:35px; border-radius:35px; width:88%; max-width:320px; text-align:center;">
@@ -297,12 +313,14 @@
                             <div>
                                 <div class="nome-cara">${app.name}</div>
                                 <div class="detalhes-cara">${app.cut} • ${app.date}</div>
+                                ${app.price ? `<div style="color:#00ff78; font-weight:900; font-size:13px; margin-top:5px;">R$ ${app.price}</div>` : ''}
                             </div>
                             <div style="font-size:11px; color:#fff; background:rgba(255,255,255,0.12); padding:5px 12px; border-radius:8px; font-weight:900; text-transform:uppercase;">${app.status || 'Pendente'}</div>
                         </div>
                         <div class="botoes-painel">
                             <button class="btn-acao btn-confirm" onclick="statusMuda('${app.id}', 'Confirmado')">Aceitar</button>
                             <button class="btn-acao btn-mudar" onclick="abreTroca('${app.id}')">Mudar</button>
+                            <button class="btn-acao" style="background:rgba(0,180,255,0.08); border-color:rgba(0,180,255,0.3); color:#00b4ff;" onclick="abrePreco('${app.id}')">Preço</button>
                         </div>
                     </div>
                 </div>
@@ -317,10 +335,20 @@
                 localStorage.setItem('db_agenda', JSON.stringify(lista));
                 desenhaPainel();
                 
-                // Notificação instantânea pro Barbeiro
+                // Notificação real pro Barbeiro
                 lista.forEach(app => {
                     if (app.notifBarber) {
-                        showAviso(`O cliente respondeu!`, "🔔");
+                        const msg = `O cliente ${app.name} agendou ou respondeu!`;
+                        showAviso(msg, "🔔");
+
+                        // Dispara Notificação de Sistema se tiver permissão
+                        if ("Notification" in window && Notification.permission === "granted") {
+                            new Notification("Novo Agendamento", {
+                                body: msg,
+                                icon: "app_icon_barbearia.png"
+                            });
+                        }
+
                         database.ref('agendamentos/' + app.id).update({ notifBarber: false });
                     }
                 });
@@ -358,21 +386,72 @@
             setTimeout(() => { t.style.opacity = '0'; t.style.visibility = 'hidden'; t.style.transform = 'translateX(-50%) scale(0.8)'; }, 3500);
         }
 
-        // Muda o status (Aceitar)
+        // Muda o status (Inicia flow de preço)
         function statusMuda(id, st) {
+            id_agora = id;
+            if (st === 'Confirmado') {
+                document.getElementById('titulo-confirm').innerText = "Confirmar Agendamento";
+                document.getElementById('modal-confirm-preco').style.opacity = '1';
+                document.getElementById('modal-confirm-preco').style.visibility = 'visible';
+                document.getElementById('input-preco').focus();
+                
+                document.getElementById('btn-salva-confirm').onclick = () => {
+                    const valor = document.getElementById('input-preco').value || '0,00';
+                    finalizaStatus(id, st, valor);
+                };
+            }
+        }
+
+        // Abre modal só pra mudar o preço
+        function abrePreco(id) {
+            id_agora = id;
+            document.getElementById('titulo-confirm').innerText = "Definir Valor";
+            document.getElementById('modal-confirm-preco').style.opacity = '1';
+            document.getElementById('modal-confirm-preco').style.visibility = 'visible';
+            document.getElementById('input-preco').focus();
+            
+            document.getElementById('btn-salva-confirm').onclick = () => {
+                const valor = document.getElementById('input-preco').value || '0,00';
+                let lista = JSON.parse(localStorage.getItem('db_agenda') || '[]');
+                const index = lista.findIndex(a => a.id == id);
+                if (index !== -1) {
+                    lista[index].price = valor;
+                    lista[index].notifClient = true; // Notifica o cliente do novo preço
+                    localStorage.setItem('db_agenda', JSON.stringify(lista));
+                    if (database) database.ref('agendamentos/' + id).update({ price: valor, notifClient: true });
+                    fechaPreco();
+                    desenhaPainel();
+                    showAviso("Preço enviado!", "💰");
+                }
+            };
+        }
+
+        function finalizaStatus(id, st, valor) {
             let lista = JSON.parse(localStorage.getItem('db_agenda') || '[]');
             const index = lista.findIndex(a => a.id == id);
             if (index !== -1) { 
                 lista[index].status = st; 
+                lista[index].price = valor;
                 lista[index].notifClient = true; 
                 localStorage.setItem('db_agenda', JSON.stringify(lista)); 
                 
                 // Update Firebase
-                if (database) database.ref('agendamentos/' + id).update({ status: st, notifClient: true });
+                if (database) database.ref('agendamentos/' + id).update({ 
+                    status: st, 
+                    price: valor,
+                    notifClient: true 
+                });
                 
+                fechaPreco();
                 desenhaPainel(); 
-                showAviso("Feito!", "✅");
+                showAviso("Confirmado com preço!", "✅");
             }
+        }
+
+        function fechaPreco() {
+            document.getElementById('modal-confirm-preco').style.opacity = '0';
+            document.getElementById('modal-confirm-preco').style.visibility = 'hidden';
+            document.getElementById('input-preco').value = '';
         }
 
         // Modais de proposta de horário
@@ -382,21 +461,40 @@
         function mandaProposta() {
             const t = document.getElementById('input-novo-h').value;
             if (!t) return;
-            let lista = JSON.parse(localStorage.getItem('db_agenda') || '[]');
-            const index = lista.findIndex(a => a.id == id_agora);
-            if (index !== -1) { 
-                lista[index].date = t; 
-                lista[index].status = 'Sugerido'; 
-                lista[index].notifClient = true; 
-                localStorage.setItem('db_agenda', JSON.stringify(lista)); 
+            
+            // Pergunta o preço também na remarcação
+            document.getElementById('modal-hora').style.opacity='0';
+            document.getElementById('modal-hora').style.visibility='hidden';
+            
+            document.getElementById('titulo-confirm').innerText = "Sugerir Novo Horário";
+            document.getElementById('modal-confirm-preco').style.opacity = '1';
+            document.getElementById('modal-confirm-preco').style.visibility = 'visible';
+            document.getElementById('input-preco').focus();
 
-                // Update Firebase
-                if (database) database.ref('agendamentos/' + id_agora).update({ date: t, status: 'Sugerido', notifClient: true });
+            document.getElementById('btn-salva-confirm').onclick = () => {
+                const valor = document.getElementById('input-preco').value || '0,00';
+                let lista = JSON.parse(localStorage.getItem('db_agenda') || '[]');
+                const index = lista.findIndex(a => a.id == id_agora);
+                if (index !== -1) { 
+                    lista[index].date = t; 
+                    lista[index].status = 'Sugerido'; 
+                    lista[index].price = valor;
+                    lista[index].notifClient = true; 
+                    localStorage.setItem('db_agenda', JSON.stringify(lista)); 
 
-                fechaTroca(); 
-                desenhaPainel(); 
-                showAviso("Sugerido!", "✉️");
-            }
+                    // Update Firebase
+                    if (database) database.ref('agendamentos/' + id_agora).update({ 
+                        date: t, 
+                        status: 'Sugerido', 
+                        price: valor,
+                        notifClient: true 
+                    });
+
+                    fechaPreco();
+                    desenhaPainel(); 
+                    showAviso("Sugerido!", "✉️");
+                }
+            };
         }
 
         // Vaza pro home

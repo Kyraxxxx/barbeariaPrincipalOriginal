@@ -149,6 +149,27 @@
             box-shadow: 0 0 10px #00ff78;
         }
 
+        /* Modal de Confirmação Customizado */
+        .modal-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.8); backdrop-filter: blur(15px);
+            z-index: 3000; display: flex; align-items: center; justify-content: center;
+            opacity: 0; visibility: hidden; transition: 0.3s;
+        }
+        .modal-overlay.show { opacity: 1; visibility: visible; }
+        .modal-content {
+            background: rgba(25,25,25,0.98); border: 1px solid rgba(255,255,255,0.15);
+            padding: 35px; border-radius: 30px; width: 90%; max-width: 340px; text-align: center;
+            transform: scale(0.8); transition: 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        .modal-overlay.show .modal-content { transform: scale(1); }
+        .modal-title { color: #fff; font-size: 16px; font-weight: 800; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 15px; }
+        .modal-text { color: rgba(255,255,255,0.6); font-size: 14px; margin-bottom: 25px; line-height: 1.5; }
+        .modal-btns { display: flex; gap: 12px; }
+        .modal-btn { flex: 1; height: 50px; border: none; border-radius: 15px; font-weight: 800; cursor: pointer; transition: 0.2s; text-transform: uppercase; font-size: 12px; }
+        .btn-cancel { background: rgba(255,255,255,0.08); color: #fff; }
+        .btn-confirm-modal { background: #ff3b30; color: #fff; }
+        .btn-confirm-modal:hover { background: #ff453a; }
+
         @keyframes vemDoLado { from { transform: translate3d(100vw, 0, 0); } to { transform: translate3d(0, 0, 0); } }
         @keyframes saiPraDireita { to { transform: translate3d(100vw, 0, 0); opacity: 0; } }
         @keyframes sobeItem { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
@@ -177,6 +198,18 @@
 
     <div class="fundo-img" id="img-fundo"></div>
     <div class="fundo-preto"></div>
+
+    <!-- Modal de Confirmação -->
+    <div class="modal-overlay" id="custom-confirm">
+        <div class="modal-content">
+            <div class="modal-title" id="confirm-title">Certeza?</div>
+            <div class="modal-text" id="confirm-msg">Quer mesmo cancelar este agendamento?</div>
+            <div class="modal-btns">
+                <button class="modal-btn btn-cancel" onclick="resolveConfirm(false)">Voltar</button>
+                <button class="modal-btn btn-confirm-modal" onclick="resolveConfirm(true)">Cancelar</button>
+            </div>
+        </div>
+    </div>
 
     <div class="btn-vaza" onclick="vazaDali()">
         <svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>
@@ -230,6 +263,33 @@
         if (!localStorage.getItem('token_cliente')) { localStorage.setItem('token_cliente', 'c_' + Math.random().toString(36).substr(2, 9)); }
         const meu_id = localStorage.getItem('token_cliente');
         
+        let confirmPromiseResolve = null;
+
+        // Função de confirmação
+        function askConfirm(title, msg) {
+            document.getElementById('confirm-title').innerText = title;
+            document.getElementById('confirm-msg').innerText = msg;
+            document.getElementById('custom-confirm').classList.add('show');
+            return new Promise(resolve => { confirmPromiseResolve = resolve; });
+        }
+
+        function resolveConfirm(res) {
+            document.getElementById('custom-confirm').classList.remove('show');
+            if (confirmPromiseResolve) confirmPromiseResolve(res);
+        }
+
+        async function cancelaAgendamento(id) {
+            const ok = await askConfirm("Cancelar?", "Quer mesmo tirar seu horário da lista? O barbeiro vai ficar sabendo.");
+            if (!ok) return;
+            
+            if (database) database.ref('agendamentos/' + id).remove();
+            let db = JSON.parse(localStorage.getItem('db_agenda') || '[]');
+            db = db.filter(a => a.id != id);
+            localStorage.setItem('db_agenda', JSON.stringify(db));
+            mandaAviso("Cancelado!", "🗑️");
+            desenhaLista();
+        }
+
         // Bloqueio de cliques esquisitos
         document.addEventListener('keydown', e => { if (e.keyCode == 123 || (e.ctrlKey && e.shiftKey && e.keyCode == 73)) e.preventDefault(); });
 
@@ -244,14 +304,19 @@
                 return; 
             }
             
+            
             alvo.innerHTML = meus.map(item => `
                 <div class="card-agendado">
                     <div class="info-txt">
-                        <div>
+                        <div style="flex:1">
                             <div class="txt-corte">${item.cut}</div>
                             <div class="txt-horario">${item.status === 'Sugerido' ? '(Mudamos o horário)' : item.date}</div>
+                            ${item.price ? `<div style="color:#00ff78; font-weight:900; font-size:14px; margin-top:5px;">R$ ${item.price}</div>` : ''}
                         </div>
                         <div class="tag-status ${item.status.toLowerCase()}">${item.status}</div>
+                        <div style="margin-left:15px; cursor:pointer; opacity:0.4" onclick="cancelaAgendamento('${item.id}')">
+                            <svg style="width:18px;height:18px;stroke:#fff;stroke-width:2.5;fill:none;" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                        </div>
                     </div>
                     ${item.status === 'Sugerido' ? `
                         <div class="caixa-proposta">
@@ -275,10 +340,20 @@
                 localStorage.setItem('db_agenda', JSON.stringify(lista));
                 desenhaLista();
                 
-                // Notificação instantânea
+                // Notificação real no celular
                 lista.forEach(app => {
                     if (app.clientId === meu_id && app.notifClient) {
-                        mandaAviso(`Oba! O barbeiro ${app.status.toLowerCase()}!`, "🔔");
+                        const msg = `O barbeiro ${app.status.toLowerCase()} seu horário!`;
+                        mandaAviso(msg, "🔔");
+                        
+                        // Dispara Notificação de Sistema se tiver permissão
+                        if ("Notification" in window && Notification.permission === "granted") {
+                            new Notification("Agendamento Barbearia", {
+                                body: msg,
+                                icon: "app_icon_barbearia.png"
+                            });
+                        }
+                        
                         database.ref('agendamentos/' + app.id).update({ notifClient: false });
                     }
                 });

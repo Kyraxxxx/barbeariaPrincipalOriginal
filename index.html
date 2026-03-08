@@ -102,42 +102,6 @@
             visibility: visible;
         }
 
-        /* Indicador de Sincronização */
-        .status-sync {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            z-index: 2000;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            background: rgba(0, 0, 0, 0.6);
-            padding: 6px 12px;
-            border-radius: 20px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            font-size: 10px;
-            font-weight: 800;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            color: rgba(255, 255, 255, 0.5);
-            pointer-events: none;
-            transition: 0.3s;
-        }
-
-        .luz {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: #ff3b30; /* Padrão: Off */
-            box-shadow: 0 0 10px #ff3b30;
-            transition: 0.3s;
-        }
-
-        .luz.on {
-            background: #00ff78;
-            box-shadow: 0 0 10px #00ff78;
-        }
-
         /* Topo da página */
         .top-header {
             position: absolute;
@@ -437,12 +401,6 @@
         <span id="txt-msg">Aviso</span>
     </div>
 
-    <!-- Indicador de Nuvem -->
-    <div class="status-sync" id="sync-box">
-        <div class="luz" id="sync-luz"></div>
-        <span id="sync-txt">Sinc Off</span>
-    </div>
-
     <div class="fundo-fixo" id="bg-site"></div>
     <div class="camada-escura"></div>
 
@@ -531,10 +489,7 @@
     </div>
 
     <script>
-        // --- CONFIGURAÇÃO FIREBASE (IMPORTANTE: CRIE SEU PROJETO NO FIREBASE) ---
-        // 1. Vá em console.firebase.google.com
-        // 2. Crie um projeto e adicione um App Web.
-        // 3. Copie as chaves abaixo do seu console.
+        // --- CONFIGURAÇÃO FIREBASE (Sincronização Offline/Online) ---
         const firebaseConfig = {
             apiKey: "AIzaSyA4afcARxM7UxR2ya1lnQdfSfmcBzYe8pk",
             authDomain: "barbearia-cb1f9.firebaseapp.com",
@@ -548,36 +503,25 @@
 
         let database = null;
         try {
-            // Só inicializa se o cara trocou o placeholder
-            if (firebaseConfig.databaseURL.includes("SEU_PROJETO")) {
-                console.log("Firebase: Configuração pendente. Usando apenas memória local.");
-            } else {
-                firebase.initializeApp(firebaseConfig);
-                database = firebase.database();
-                
-                // Monitora a conexão real
-                const connectedRef = database.ref(".info/connected");
-                connectedRef.on("value", (snap) => {
-                    const luz = document.getElementById('sync-luz');
-                    const txt = document.getElementById('sync-txt');
-                    if (snap.val() === true) {
-                        luz.classList.add('on');
-                        txt.innerText = "Sinc On";
-                        txt.style.color = "#00ff78";
-                    } else {
-                        luz.classList.remove('on');
-                        txt.innerText = "Sinc Off";
-                        txt.style.color = "rgba(255,255,255,0.5)";
-                    }
-                });
-            }
-        } catch (e) { 
-            console.log("Erro Firebase:", e); 
+            firebase.initializeApp(firebaseConfig);
+            database = firebase.database();
+        } catch (e) {
+            console.log("Firebase error:", e);
         }
 
         // Cria um ID pro cara se não tiver
         if (!localStorage.getItem('token_cliente')) { localStorage.setItem('token_cliente', 'c_' + Math.random().toString(36).substr(2, 9)); }
         const id_atual = localStorage.getItem('token_cliente');
+
+        // Pede permissão de notificação logo de cara se tiver Firebase
+        if (database && "Notification" in window) {
+            if (Notification.permission !== "granted" && Notification.permission !== "denied") {
+                document.body.addEventListener('click', function ask() {
+                    Notification.requestPermission();
+                    document.body.removeEventListener('click', ask);
+                }, { once: true });
+            }
+        }
 
         // Trava as teclas que o povo usa pra 'roubar' código
         document.addEventListener('keydown', function (e) {
@@ -607,7 +551,17 @@
                 // Aviso instantâneo se o barbeiro mexer em algo do cliente
                 lista.forEach(app => {
                     if (app.clientId === id_atual && app.notifClient) {
-                        soltaAviso(`O barbeiro ${app.status.toLowerCase()} seu pedido!`, "🔔");
+                        const msg = `O barbeiro ${app.status.toLowerCase()} seu pedido!`;
+                        soltaAviso(msg, "🔔");
+
+                        // Notificação estilo WhatsApp
+                        if ("Notification" in window && Notification.permission === "granted") {
+                            new Notification("Agendamento Barbearia", {
+                                body: msg,
+                                icon: "app_icon_barbearia.png"
+                            });
+                        }
+
                         database.ref('agendamentos/' + app.id).update({ notifClient: false });
                     }
                 });
@@ -738,7 +692,7 @@
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('sw.js')
                 .then(() => console.log('App pronto pra rodar offline!'))
-                .catch (err => console.log('Erro no worker:', err));
+                .catch(err => console.log('Erro no worker:', err));
         }
     </script>
 </body>
