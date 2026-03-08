@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Barbearia | Agendamento</title>
+
+    <!-- Bagulhos de PWA pra virar app -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Barbearia">
+    <link rel="apple-touch-icon" href="app_icon_barbearia.png">
+    <meta name="theme-color" content="#000000">
+
+    <!-- Firebase SDK (Sincronização entre celulares) -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-database-compat.js"></script>
+
+    <style>
+        /* Reset l e travas de segurança */
+        * {
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+            /* Deixa o texto travado pra não copiarem */
+            -webkit-user-select: none;
+            outline: none;
+        }
+
+        html,
+        body {
+            height: 100dvh;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: #000;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            text-rendering: optimizeLegibility;
+        }
+
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            position: relative;
+            transform: translate3d(0, 0, 0);
+            backface-visibility: hidden;
+        }
+
+        /* Camada de Fundo (Imagem de fundo) */
+        .fundo-fixo {
+            position: absolute;
+            inset: 0;
+            background-size: cover;
+            background-position: center;
+            z-index: 0;
+            background-image: url('Fundo.png');
+            transition: transform 0.8s cubic-bezier(0.7, 0, 0.3, 1);
+            will-change: transform;
+            transform: translate3d(0, 0, 0);
+        }
+
+        .camada-escura {
+            position: absolute;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.45);
+            z-index: 1;
+        }
+
+        /* Aviso discreto (Toast) */
+        #aviso-flutuante {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%) translate3d(0, 0, 0) scale(0.8);
+            background: rgba(15, 15, 15, 0.95);
+            backdrop-filter: blur(20px);
+            color: #fff;
+            padding: 12px 28px;
+            border-radius: 40px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+            transition: 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+        }
+
+        #aviso-flutuante.show {
+            transform: translateX(-50%) translate3d(0, 0, 0) scale(1);
+            opacity: 1;
+            visibility: visible;
+        }
+
+        /* Topo da página */
+        .top-header {
+            position: absolute;
+            top: 6%;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+            z-index: 5;
+            animation: vemDeCima 0.8s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+        }
+
+        .logo-txt {
+            color: #fff;
+            font-size: 38px;
+            font-weight: 900;
+            letter-spacing: 10px;
+            text-transform: uppercase;
+            text-shadow: 0 0 35px rgba(255, 255, 255, 0.3);
+            margin: 0;
+            white-space: nowrap;
+        }
+
+        .btn-log-barbeiro {
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255, 255, 255, 0.4);
+            color: #fff;
+            padding: 10px 30px;
+            border-radius: 50px;
+            font-size: 11px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            cursor: pointer;
+            transition: 0.4s;
+        }
+
+        .btn-log-barbeiro:hover {
+            background: #fff;
+            color: #000;
+            letter-spacing: 5px;
+            border-color: #fff;
+        }
+
+        /* Container que segura os inputs */
+        .painel-central {
+            position: relative;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding: 10px;
+            width: 92%;
+            max-width: 330px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 22px;
+            background: rgba(0, 0, 0, 0.65);
+            backdrop-filter: blur(45px);
+            animation: vemDeBaixo 0.8s 0.1s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+            opacity: 0;
+            transform: translateY(20px) translate3d(0, 0, 0);
+            transition: transform 0.8s cubic-bezier(0.7, 0, 0.3, 1), opacity 0.4s;
+            will-change: transform, opacity;
+        }
+
+        /* Rodapé com link pra agenda */
+        .rodape-agenda {
+            position: absolute;
+            bottom: 10%;
+            z-index: 5;
+            animation: vemDeBaixo 1s 0.2s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+            opacity: 0;
+        }
+
+        .btn-ver-agenda {
+            position: relative;
+            background: rgba(255, 255, 255, 0.12);
+            border: 1.5px solid rgba(255, 255, 255, 0.3);
+            color: #fff;
+            padding: 14px 32px;
+            border-radius: 14px;
+            font-size: 11px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 2.5px;
+            cursor: pointer;
+            transition: 0.3s;
+            backdrop-filter: blur(10px);
+        }
+
+        .btn-ver-agenda:hover {
+            background: #fff;
+            color: #000;
+            border-color: #fff;
+            transform: translateY(-3px);
+        }
+
+        /* Pinguinho de notificação */
+        .bolinha-notif {
+            position: absolute;
+            top: -10px;
+            right: -10px;
+            background: #ff3b30;
+            color: #fff;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            font-size: 12px;
+            font-weight: 900;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 0 20px rgba(255, 59, 48, 0.6);
+            opacity: 0;
+            visibility: hidden;
+            transform: scale(0.5);
+            transition: 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+            animation: piscaVermelho 2.5s infinite;
+        }
+
+        .bolinha-notif.show {
+            opacity: 1;
+            visibility: visible;
+            transform: scale(1);
+        }
+
+        @keyframes piscaVermelho {
+            0% {
+                box-shadow: 0 0 0 0 rgba(255, 59, 48, 0.7);
+            }
+
+            70% {
+                box-shadow: 0 0 0 12px rgba(255, 59, 48, 0);
+            }
+
+            100% {
+                box-shadow: 0 0 0 0 rgba(255, 59, 48, 0);
+            }
+        }
+
+        /* Inputs de digitação */
+        .campo-input,
+        .btn-clicavel {
+            display: flex;
+            align-items: center;
+            padding: 0 18px;
+            height: 50px;
+            width: 100%;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 14px;
+            color: #fff;
+            font-size: 15px;
+            font-family: inherit;
+            transition: 0.2s;
+            outline: none;
+        }
+
+        .btn-clicavel {
+            justify-content: center;
+            gap: 12px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .btn-clicavel:hover {
+            background: rgba(255, 255, 255, 0.12);
+            border-color: rgba(255, 255, 255, 0.5);
+        }
+
+        /* Lista de serviços que abre */
+        .deck-servicos {
+            width: 100%;
+            max-height: 0;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            opacity: 0;
+            transform: translateY(-10px) translate3d(0, 0, 0);
+            transition: max-height 0.6s cubic-bezier(0.7, 0, 0.3, 1), opacity 0.4s ease, transform 0.5s cubic-bezier(0.23, 1, 0.32, 1);
+            will-change: max-height, opacity, transform;
+        }
+
+        .deck-servicos.show {
+            max-height: 500px;
+            opacity: 1;
+            transform: translateY(0) translate3d(0, 0, 0);
+            padding: 12px 0;
+        }
+
+        .area-scroll {
+            max-height: 300px;
+            overflow-y: auto;
+            padding-right: 8px;
+            scroll-behavior: smooth;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .area-scroll::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .area-scroll::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.25);
+            border-radius: 10px;
+        }
+
+        .btn-corte {
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 12px;
+            color: rgba(255, 255, 255, 0.7);
+            cursor: pointer;
+            font-size: 15px;
+            text-align: center;
+            transition: 0.2s;
+            margin-bottom: 8px;
+        }
+
+        .btn-corte:hover,
+        .btn-corte.ativo {
+            background: rgba(255, 255, 255, 0.18);
+            border-color: rgba(255, 255, 255, 0.7);
+            color: #fff;
+        }
+
+        /* Efeitos de fechar página */
+        .sai-tela {
+            transform: translate3d(-100vw, 0, 0) !important;
+            opacity: 0 !important;
+            transition: transform 0.8s cubic-bezier(0.7, 0, 0.3, 1), opacity 0.4s !important;
+            backdrop-filter: none !important;
+            contain: paint;
+        }
+
+        .sai-bg {
+            transform: translate3d(-100%, 0, 0) !important;
+            transition: transform 0.8s cubic-bezier(0.7, 0, 0.3, 1) !important;
+        }
+
+        @keyframes vemDeBaixo {
+            to {
+                opacity: 1;
+                transform: translateY(0) translate3d(0, 0, 0);
+            }
+        }
+
+        @keyframes vemDeCima {
+            from {
+                opacity: 0;
+                transform: translateY(-30px) translate3d(0, 0, 0);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0) translate3d(0, 0, 0);
+            }
+        }
+
+        .svg-icon {
+            width: 18px;
+            height: 18px;
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 2.5;
+        }
+
+        /* Ajustes Mobile pra não ficar esticado */
+        @media (max-width: 480px) {
+            .logo-txt {
+                font-size: 32px;
+                letter-spacing: 7px;
+            }
+
+            .painel-central {
+                width: 88%;
+                max-width: 310px;
+                padding: 12px;
+            }
+
+            .campo-input {
+                font-size: 16px;
+            }
+
+            /* Evita zoom chato no iPhone */
+        }
+    </style>
+</head>
+
+<body oncontextmenu="return false;"> <!-- Trava o botão direito do mouse -->
+
+    <div id="aviso-flutuante">
+        <span id="txt-icone">✨</span>
+        <span id="txt-msg">Aviso</span>
+    </div>
+
+    <div class="fundo-fixo" id="bg-site"></div>
+    <div class="camada-escura"></div>
+
+    <div class="top-header" id="header-main">
+        <h1 class="logo-txt">Barbearia</h1>
+        <button class="btn-log-barbeiro" onclick="abreSenha()">Barbeiro</button>
+    </div>
+
+    <div class="painel-central" id="painel-box">
+        <input type="text" class="campo-input" placeholder="Seu nome" id="input-nome" autocomplete="off"
+            spellcheck="false">
+        <input type="text" class="campo-input" placeholder="Dia e Horário" id="input-hora" autocomplete="off"
+            spellcheck="false">
+
+        <button class="btn-clicavel" id="btn-envio"
+            style="background: rgba(255, 255, 255, 0.12); font-weight: 800; margin-top: 5px;">
+            <span>Agendar</span>
+            <svg class="svg-icon" viewBox="0 0 24 24">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="16" y1="2" x2="16" y2="6"></line>
+                <line x1="8" y1="2" x2="8" y2="6"></line>
+                <line x1="3" y1="10" x2="21" y2="10"></line>
+            </svg>
+        </button>
+
+        <button class="btn-clicavel" id="btn-servicos" style="margin-top: 4px;">
+            <span id="txt-servico">Escolher Corte</span>
+            <svg class="svg-icon" viewBox="0 0 24 24" id="seta-deck" style="transition: 0.3s;">
+                <path d="M6 9l6 6 6-6"></path>
+            </svg>
+        </button>
+
+        <div class="btn-clicavel" id="btn-desmarcar"
+            style="margin-top: 4px; display: none; background: rgba(255, 59, 48, 0.1); border-color: rgba(255, 59, 48, 0.4); color: #ff3b30;"
+            onclick="desmarcarTudo()">
+            <span>Desmarcar</span>
+            <svg class="svg-icon" viewBox="0 0 24 24">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+        </div>
+
+        <div class="deck-servicos" id="deck-menu">
+            <div class="area-scroll">
+                <div class="btn-corte" onclick="bateuOCorte(this)">Corte Masculino</div>
+                <div class="btn-corte" onclick="bateuOCorte(this)">Barba</div>
+                <div class="btn-corte" onclick="bateuOCorte(this)">Corte + Barba</div>
+                <div class="btn-corte" onclick="bateuOCorte(this)">Pintar</div>
+                <div class="btn-corte" onclick="bateuOCorte(this)">Luzes / Reflexo</div>
+                <div class="btn-corte" onclick="bateuOCorte(this)">Pigmentação</div>
+
+                <div
+                    style="color:rgba(255,255,255,0.4); font-size:11px; margin: 10px 0 5px 5px; font-weight: 800; text-transform: uppercase;">
+                    Motivo / Detalhes:</div>
+                <textarea
+                    style="width:100%; height:80px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); border-radius:12px; color:#fff; padding:12px; font-family:inherit; font-size:14px; resize:none;"
+                    placeholder="Alguma observação adicional?" id="txt-obs" spellcheck="false"></textarea>
+            </div>
+        </div>
+    </div>
+
+    <div class="rodape-agenda" id="rodape-link">
+        <button class="btn-ver-agenda" onclick="pulaPraAgenda()">
+            Meus Agendamentos
+            <div class="bolinha-notif" id="badge-n">1</div>
+        </button>
+    </div>
+
+    <!-- Janela de senha (Administrador) -->
+    <div style="position:fixed; inset:0; background:rgba(0,0,0,0.85); backdrop-filter:blur(25px); z-index:2000; display:flex; align-items:center; justify-content:center; opacity:0; visibility:hidden; transition:0.3s;"
+        id="modal-adm">
+        <div
+            style="background:rgba(25,25,25,0.98); border:1px solid rgba(255,255,255,0.15); padding:40px; border-radius:35px; width:90%; max-width:330px; text-align:center; transform:scale(0.8); transition:0.4s cubic-bezier(0.34, 1.56, 0.64, 1);">
+            <div
+                style="color:#fff; font-size:15px; font-weight:800; margin-bottom:25px; text-transform:uppercase; letter-spacing:2px;">
+                Senha Do Profissional</div>
+            <input type="text"
+                style="width:100%; height:55px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.15); border-radius:16px; color:#fff; text-align:center; font-size:28px; font-weight:800; outline:none; margin-bottom:30px; letter-spacing:15px;"
+                id="pass-val" placeholder="0000" maxlength="4" autocomplete="off" spellcheck="false">
+            <button
+                style="width:100%; height:52px; border:none; border-radius:16px; background:#fff; color:#000; font-weight:900; cursor:pointer;"
+                onclick="checaSenha()">Abrir</button>
+            <div style="margin-top:20px; color:rgba(255,255,255,0.4); font-size:12px; cursor:pointer;"
+                onclick="fechaModal()">CANCELAR</div>
+        </div>
+    </div>
+
+    <script>
+        // --- CONFIGURAÇÃO FIREBASE (Sincronização Offline/Online) ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyA4afcARxM7UxR2ya1lnQdfSfmcBzYe8pk",
+            authDomain: "barbearia-cb1f9.firebaseapp.com",
+            databaseURL: "https://barbearia-cb1f9-default-rtdb.firebaseio.com",
+            projectId: "barbearia-cb1f9",
+            storageBucket: "barbearia-cb1f9.firebasestorage.app",
+            messagingSenderId: "698750683688",
+            appId: "1:698750683688:web:883711c2a1a14b081e431d",
+            measurementId: "G-E3NMJV0BVY"
+        };
+
+        let database = null;
+        try {
+            firebase.initializeApp(firebaseConfig);
+            database = firebase.database();
+        } catch (e) {
+            console.log("Firebase error:", e);
+        }
+
+        // Cria um ID pro cara se não tiver
+        if (!localStorage.getItem('token_cliente')) { localStorage.setItem('token_cliente', 'c_' + Math.random().toString(36).substr(2, 9)); }
+        const id_atual = localStorage.getItem('token_cliente');
+
+        // Pede permissão de notificação logo de cara se tiver Firebase
+        if (database && "Notification" in window) {
+            if (Notification.permission !== "granted" && Notification.permission !== "denied") {
+                document.body.addEventListener('click', function ask() {
+                    Notification.requestPermission();
+                    document.body.removeEventListener('click', ask);
+                }, { once: true });
+            }
+        }
+
+        // Trava as teclas que o povo usa pra 'roubar' código
+        document.addEventListener('keydown', function (e) {
+            if (e.keyCode == 123 || (e.ctrlKey && e.shiftKey && (e.keyCode == 73 || e.keyCode == 74)) || (e.ctrlKey && e.keyCode == 85)) {
+                e.preventDefault();
+                return false;
+            }
+        });
+
+        // Ve se tem algum aviso novo do barbeiro
+        function checaNovos() {
+            const bd = JSON.parse(localStorage.getItem('db_agenda') || '[]');
+            const meus = bd.filter(a => a.clientId === id_atual);
+            const temCoisa = meus.some(a => a.status === 'Sugerido' || a.notifClient);
+            const bola = document.getElementById('badge-n');
+            if (temCoisa) bola.classList.add('show'); else bola.classList.remove('show');
+        }
+
+        // Sincroniza o Firebase com o LocalStorage
+        if (database) {
+            database.ref('agendamentos').on('value', (snapshot) => {
+                const data = snapshot.val();
+                const lista = data ? Object.values(data) : [];
+                localStorage.setItem('db_agenda', JSON.stringify(lista));
+                checaNovos();
+
+                // Aviso instantâneo se o barbeiro mexer em algo do cliente
+                lista.forEach(app => {
+                    if (app.clientId === id_atual && app.notifClient) {
+                        const msg = `O barbeiro ${app.status.toLowerCase()} seu pedido!`;
+                        soltaAviso(msg, "🔔");
+
+                        // Notificação estilo WhatsApp
+                        if ("Notification" in window && Notification.permission === "granted") {
+                            new Notification("Agendamento Barbearia", {
+                                body: msg,
+                                icon: "app_icon_barbearia.png"
+                            });
+                        }
+
+                        database.ref('agendamentos/' + app.id).update({ notifClient: false });
+                    }
+                });
+
+                window.dispatchEvent(new Event('storage'));
+            });
+        }
+        checaNovos();
+
+        // Mostra o balaozinho de aviso
+        function soltaAviso(msg, icon = "✨") {
+            const t = document.getElementById('aviso-flutuante');
+            document.getElementById('txt-icone').innerText = icon;
+            document.getElementById('txt-msg').innerText = msg;
+            t.classList.add('show');
+            setTimeout(() => t.classList.remove('show'), 3500);
+        }
+
+        // Modais de senha
+        function abreSenha() {
+            const m = document.getElementById('modal-adm');
+            m.style.opacity = '1'; m.style.visibility = 'visible';
+            m.children[0].style.transform = 'scale(1)';
+            document.getElementById('pass-val').focus();
+        }
+        function fechaModal() {
+            const m = document.getElementById('modal-adm');
+            m.style.opacity = '0'; m.style.visibility = 'hidden';
+            m.children[0].style.transform = 'scale(0.8)';
+        }
+
+        function checaSenha() {
+            if (document.getElementById('pass-val').value === "3031") { vaiPra('painel_barbeiro.html'); }
+            else { soltaAviso("Senha errada!", "❌"); document.getElementById('pass-val').value = ''; }
+        }
+
+        // Animação de sair da página
+        function vaiPra(url) {
+            document.getElementById('painel-box').classList.add('sai-tela');
+            document.getElementById('header-main').classList.add('sai-tela');
+            document.getElementById('rodape-link').classList.add('sai-tela');
+            document.getElementById('bg-site').classList.add('sai-bg');
+            setTimeout(() => { window.location.href = url; }, 780);
+        }
+
+        function pulaPraAgenda() {
+            localStorage.setItem('limpa_notif', Date.now());
+            vaiPra('meus_agendamentos.html');
+        }
+
+        // Abre e fecha os cortes
+        document.getElementById('btn-servicos').addEventListener('click', () => {
+            const taOn = document.getElementById('deck-menu').classList.toggle('show');
+            document.getElementById('seta-deck').style.transform = taOn ? 'rotate(180deg)' : 'rotate(0deg)';
+        });
+
+        // Quando o cara clica num corte
+        function bateuOCorte(el) {
+            document.querySelectorAll('.btn-corte').forEach(i => i.classList.remove('ativo'));
+            el.classList.add('ativo');
+            document.getElementById('txt-servico').innerText = el.innerText;
+            document.getElementById('deck-menu').classList.remove('show');
+            document.getElementById('seta-deck').style.transform = 'rotate(0deg)';
+
+            // Troca o botão de escolher pela opção de desmarcar
+            document.getElementById('btn-servicos').style.display = 'none';
+            document.getElementById('btn-desmarcar').style.display = 'flex';
+        }
+
+        function desmarcarTudo() {
+            document.querySelectorAll('.btn-corte').forEach(i => i.classList.remove('ativo'));
+            document.getElementById('txt-servico').innerText = 'Escolher Corte';
+            document.getElementById('btn-servicos').style.display = 'flex';
+            document.getElementById('btn-desmarcar').style.display = 'none';
+            document.getElementById('txt-obs').value = '';
+        }
+
+        // Salva o agendamento
+        document.getElementById('btn-envio').addEventListener('click', () => {
+            const btn = document.getElementById('btn-envio');
+            if (btn.classList.contains('agendado-ja')) return;
+
+            const n = document.getElementById('input-nome').value;
+            const h = document.getElementById('input-hora').value;
+            const s = document.querySelector('.btn-corte.ativo')?.innerText;
+
+            if (!n || !h || !s) { soltaAviso("Esqueceu de algo?", "⚠️"); return; }
+
+            const novo = {
+                clientId: id_atual,
+                name: n,
+                date: h,
+                cut: s,
+                details: document.getElementById('txt-obs').value,
+                status: 'Pendente',
+                id: Date.now()
+            };
+
+            let dados = JSON.parse(localStorage.getItem('db_agenda') || '[]');
+            dados.push(novo);
+            localStorage.setItem('db_agenda', JSON.stringify(dados));
+
+            // Sobe pro Firebase se estiver on
+            if (database) {
+                database.ref('agendamentos/' + novo.id).set(novo);
+            }
+
+            // Feedback visual de agendado
+            soltaAviso("Pronto! Já tá na mão.", "✅");
+            document.getElementById('badge-n').classList.add('show');
+
+            btn.innerHTML = '<span>Agendado</span><svg class="svg-icon" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+            btn.style.background = 'rgba(0, 255, 120, 0.2)';
+            btn.style.color = '#00ff78';
+            btn.style.borderColor = 'rgba(0, 255, 120, 0.4)';
+            btn.classList.add('agendado-ja');
+
+            // Trava os inputs
+            document.getElementById('input-nome').disabled = true;
+            document.getElementById('input-hora').disabled = true;
+            document.getElementById('btn-desmarcar').style.pointerEvents = 'none';
+        });
+
+        // Fica de olho se mudaram algo no banco
+        window.addEventListener('storage', checaNovos);
+
+        // Registro do Service Worker (Pras lojas aceitarem o APK)
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js')
+                .then(() => console.log('App pronto pra rodar offline!'))
+                .catch(err => console.log('Erro no worker:', err));
+        }
+    </script>
+</body>
+
+</html>
