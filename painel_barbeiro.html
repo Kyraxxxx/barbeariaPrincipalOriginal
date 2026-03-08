@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Barbearia | Painel do Barbeiro</title>
+    
+    <!-- Bagulhos de app -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Barbearia">
+    <link rel="apple-touch-icon" href="app_icon_barbearia.png">
+    <meta name="theme-color" content="#000000">
+    <link rel="manifest" href="manifest.json">
+
+    <!-- Firebase SDK (Sincronização entre celulares) -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-database-compat.js"></script>
+
+    <style>
+        * { 
+            box-sizing: border-box; 
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+        }
+        html, body { 
+            height: 100dvh; margin: 0; padding: 0; 
+            overflow: hidden; background: #000; 
+            -webkit-font-smoothing: antialiased;
+            text-rendering: optimizeLegibility;
+        }
+        body { 
+            display: flex; align-items: center; justify-content: center; 
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; position: relative; 
+            transform: translate3d(0,0,0); backface-visibility: hidden;
+            animation: vemSuave 0.7s ease-out;
+        }
+
+        @keyframes vemSuave { from { opacity: 0; } to { opacity: 1; } }
+
+        .bg-camada {
+            position: absolute; inset: 0; background-size: cover; background-position: center; z-index: 1;
+            background-image: url('Fundo2.png'); transform: translate3d(100%, 0, 0);
+            animation: deslizaX 0.8s cubic-bezier(0.7, 0, 0.3, 1) forwards;
+            will-change: transform;
+        }
+        .bg-escuro { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.55); z-index: 2; }
+
+        .painel-box {
+            position: relative; z-index: 10; padding: 25px; width: 94%; max-width: 500px;
+            border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 28px;
+            background: rgba(0, 0, 0, 0.8); 
+            backdrop-filter: none !important;
+            transform: translate3d(100vw, 0, 0); 
+            animation: deslizaX 0.8s cubic-bezier(0.7, 0, 0.3, 1) forwards, ligaVidro 0.4s 0.8s forwards;
+            will-change: transform;
+            contain: paint;
+        }
+
+        @keyframes ligaVidro { to { backdrop-filter: blur(45px); -webkit-backdrop-filter: blur(45px); } }
+
+        .topo-txt { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255, 255, 255, 0.12); padding-bottom: 20px; margin-bottom: 25px; }
+        .topo-txt h1 { color: #fff; margin: 0; font-size: 18px; font-weight: 800; text-transform: uppercase; letter-spacing: 3px; }
+
+        .deck-cards { max-height: 420px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding-right: 5px; scroll-behavior: smooth; }
+        .deck-cards::-webkit-scrollbar { width: 3px; }
+        .deck-cards::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.25); border-radius: 10px; }
+
+        .card-pessoa { background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 20px; padding: 20px; display: flex; align-items: center; gap: 18px; position: relative; }
+        .check-marcar { width: 24px; height: 24px; border: 2.5px solid rgba(255,255,255,0.2); border-radius: 8px; appearance: none; cursor: pointer; transition: 0.2s; position: relative; flex-shrink: 0; }
+        .check-marcar:checked { background: #fff; border-color: #fff; }
+        .check-marcar:checked::after { content: '✓'; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); color: #000; font-size: 16px; font-weight: 900; }
+
+        .corpo-card { flex: 1; display: flex; flex-direction: column; gap: 14px; }
+        .info-card { display: flex; justify-content: space-between; align-items: flex-start; }
+        .nome-cara { color: #fff; font-weight: 700; font-size: 17px; }
+        .detalhes-cara { color: rgba(255, 255, 255, 0.45); font-size: 12px; margin-top: 3px; }
+
+        .botoes-painel { display: flex; gap: 10px; }
+        .btn-acao { flex: 1; padding: 13px; border-radius: 13px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.06); color: #fff; font-size: 12px; font-weight: 800; cursor: pointer; transition: 0.3s; text-transform: uppercase; }
+        .btn-confirm { background: rgba(0, 255, 120, 0.1); border-color: rgba(0, 255, 120, 0.4); color: #00ff78; }
+        .btn-confirm:hover { background: #00ff78; color: #000; }
+        .btn-mudar { color: #ffca28; background: rgba(255, 202, 40, 0.1); border-color: rgba(255, 202, 40, 0.4); }
+        .btn-mudar:hover { background: #ffca28; color: #000; }
+
+        .lixeira { cursor: pointer; padding: 10px; border-radius: 12px; background: rgba(255, 59, 48, 0.15); color: #ff3b30; border: 1px solid rgba(255, 59, 48, 0.35); display: flex; align-items: center; justify-content: center; transition: 0.2s; }
+        .lixeira:hover { background: #ff3b30; color: #fff; }
+        
+        #toast-aviso { position: fixed; top: 25px; left: 50%; transform: translateX(-50%) scale(0.8); background: rgba(18,18,18,0.98); backdrop-filter: blur(25px); color: #fff; padding: 12px 30px; border-radius: 40px; border: 1px solid rgba(255, 255, 255, 0.15); z-index: 2000; display: flex; align-items: center; gap: 12px; transition: 0.4s; opacity: 0; visibility: hidden; }
+
+        @keyframes deslizaX { from { transform: translate3d(100vw, 0, 0); } to { transform: translate3d(0, 0, 0); } }
+        .btn-vaza { 
+            position: fixed;
+            top: 25px;
+            left: 20px;
+            z-index: 1000;
+            cursor: pointer; 
+            width: 48px; height: 48px;
+            display: flex; align-items: center; justify-content: center;
+            background: rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border-radius: 50%;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            transition: 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        }
+        .btn-vaza:active { transform: scale(0.9); }
+        .btn-vaza svg { width: 26px; height: 26px; stroke: #fff; stroke-width: 3.5; fill: none; }
+
+        /* Indicador de Sincronização */
+        .status-sync {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 2000;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(0, 0, 0, 0.6);
+            padding: 6px 12px;
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            font-size: 10px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: rgba(255, 255, 255, 0.5);
+            pointer-events: none;
+            transition: 0.3s;
+        }
+
+        .luz {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #ff3b30;
+            box-shadow: 0 0 10px #ff3b30;
+            transition: 0.3s;
+        }
+
+        .luz.on {
+            background: #00ff78;
+            box-shadow: 0 0 10px #00ff78;
+        }
+
+        /* Modal Customizado */
+        .modal-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.8); backdrop-filter: blur(15px);
+            z-index: 3000; display: flex; align-items: center; justify-content: center;
+            opacity: 0; visibility: hidden; transition: 0.3s;
+        }
+        .modal-overlay.show { opacity: 1; visibility: visible; }
+        .modal-content {
+            background: rgba(25,25,25,0.98); border: 1px solid rgba(255,255,255,0.15);
+            padding: 35px; border-radius: 30px; width: 90%; max-width: 340px; text-align: center;
+            transform: scale(0.8); transition: 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        .modal-overlay.show .modal-content { transform: scale(1); }
+        .modal-title { color: #fff; font-size: 16px; font-weight: 800; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 15px; }
+        .modal-text { color: rgba(255,255,255,0.6); font-size: 14px; margin-bottom: 25px; line-height: 1.5; }
+        .modal-btns { display: flex; gap: 12px; }
+        .modal-btn { flex: 1; height: 50px; border: none; border-radius: 15px; font-weight: 800; cursor: pointer; transition: 0.2s; text-transform: uppercase; font-size: 12px; }
+        .btn-cancel { background: rgba(255,255,255,0.08); color: #fff; }
+        .btn-confirm-modal { background: #ff3b30; color: #fff; }
+        .btn-confirm-modal:hover { background: #ff453a; }
+
+        /* Mobile pra não cagar o layout */
+        @media (max-width: 480px) {
+            .painel-box { padding: 20px; width: 92%; }
+            .nome-cara { font-size: 16px; }
+            .btn-acao { padding: 11px; font-size: 11px; }
+        }
+    </style>
+</head>
+<body id="page-corpo" oncontextmenu="return false;">
+
+    <div id="toast-aviso">
+        <span id="icone-s">✨</span>
+        <span id="txt-s">Mensagem</span>
+    </div>
+
+    <!-- Indicador de Nuvem -->
+    <div class="status-sync" id="sync-box">
+        <div class="luz" id="sync-luz"></div>
+        <span id="sync-txt">Sinc Off</span>
+    </div>
+
+    <div class="bg-camada"></div>
+    <div class="bg-escuro"></div>
+
+    <div class="btn-vaza" onclick="sairFora()">
+        <svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>
+    </div>
+
+    <div class="painel-box">
+        <div class="topo-txt">
+            <div style="flex: 1; display:flex; align-items:center; gap:12px;">
+                <h1>Painel</h1>
+                <div class="lixeira" onclick="limpaMarcados()" title="Apagar tudo selecionado">
+                    <svg style="width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2.5;" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                </div>
+            </div>
+        </div>
+        <div class="deck-cards" id="lista-marcada"></div>
+    </div>
+
+    <!-- Modal de Confirmação Customizado -->
+    <div class="modal-overlay" id="custom-confirm">
+        <div class="modal-content">
+            <div class="modal-title" id="confirm-title">Tem certeza?</div>
+            <div class="modal-text" id="confirm-msg">Essa ação não pode ser desfeita.</div>
+            <div class="modal-btns">
+                <button class="modal-btn btn-cancel" onclick="resolveConfirm(false)">Voltar</button>
+                <button class="modal-btn btn-confirm-modal" id="btn-confirma-acao" onclick="resolveConfirm(true)">Sim, Apagar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Confirmação com Preço -->
+    <div style="position:fixed; inset:0; background:rgba(0,0,0,0.85); backdrop-filter:blur(30px); z-index:1500; display:flex; align-items:center; justify-content:center; opacity:0; visibility:hidden; transition:0.3s;" id="modal-confirm-preco">
+        <div style="background:rgba(22,22,22,0.98); border:1px solid rgba(255,255,255,0.15); padding:35px; border-radius:35px; width:88%; max-width:320px; text-align:center;">
+            <div style="color:#fff; font-size:15px; font-weight:900; margin-bottom:10px; text-transform:uppercase; letter-spacing:1px;" id="titulo-confirm">Confirmar Agendamento</div>
+            <div style="color:rgba(255,255,255,0.5); font-size:12px; margin-bottom:25px;">Informe o valor do serviço:</div>
+            
+            <div style="position:relative; margin-bottom:25px;">
+                <span style="position:absolute; left:20px; top:50%; transform:translateY(-50%); color:rgba(255,255,255,0.5); font-weight:800;">R$</span>
+                <input type="text" style="width:100%; height:55px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15); border-radius:18px; color:#fff; padding:0 18px 0 45px; font-size:22px; font-weight:800; outline:none;" id="input-preco" placeholder="0,00" autocomplete="off" spellcheck="false">
+            </div>
+
+            <button style="width:100%; height:52px; border:none; border-radius:18px; background:#fff; color:#000; font-weight:900; cursor:pointer;" id="btn-salva-confirm">CONFIRMAR AGORA</button>
+            <div style="margin-top:20px; color:rgba(255,255,255,0.35); font-size:12px; cursor:pointer;" onclick="fechaPreco()">CANCELAR</div>
+        </div>
+    </div>
+
+    <!-- Modal pra mudar horário -->
+    <div style="position:fixed; inset:0; background:rgba(0,0,0,0.85); backdrop-filter:blur(30px); z-index:1000; display:flex; align-items:center; justify-content:center; opacity:0; visibility:hidden; transition:0.3s;" id="modal-hora">
+        <div style="background:rgba(22,22,22,0.98); border:1px solid rgba(255,255,255,0.15); padding:35px; border-radius:35px; width:88%; max-width:320px; text-align:center;">
+            <div style="color:#fff; font-size:15px; font-weight:900; margin-bottom:25px; text-transform:uppercase; letter-spacing:1px;">Qual o novo horário?</div>
+            <input type="text" style="width:100%; height:52px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15); border-radius:16px; color:#fff; padding:0 18px; text-align:center; font-size:17px; outline:none; margin-bottom:25px;" id="input-novo-h" placeholder="Ex: Amanhã às 14h" autocomplete="off" spellcheck="false">
+            <button style="width:100%; height:50px; border:none; border-radius:16px; background:#fff; color:#000; font-weight:900; cursor:pointer;" onclick="mandaProposta()">MANDAR PROPOSTA</button>
+            <div style="margin-top:20px; color:rgba(255,255,255,0.35); font-size:12px; cursor:pointer;" onclick="fechaTroca()">CANCELAR</div>
+        </div>
+    </div>
+
+    <script>
+        // --- CONFIGURAÇÃO FIREBASE ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyA4afcARxM7UxR2ya1lnQdfSfmcBzYe8pk",
+            authDomain: "barbearia-cb1f9.firebaseapp.com",
+            databaseURL: "https://barbearia-cb1f9-default-rtdb.firebaseio.com",
+            projectId: "barbearia-cb1f9",
+            storageBucket: "barbearia-cb1f9.firebasestorage.app",
+            messagingSenderId: "698750683688",
+            appId: "1:698750683688:web:883711c2a1a14b081e431d",
+            measurementId: "G-E3NMJV0BVY"
+        };
+        
+        let database = null;
+        try {
+            if (firebaseConfig.databaseURL.includes("SEU_PROJETO")) {
+                console.log("Firebase Pendente.");
+            } else {
+                firebase.initializeApp(firebaseConfig);
+                database = firebase.database();
+
+                // Status real
+                database.ref(".info/connected").on("value", (snap) => {
+                    const luz = document.getElementById('sync-luz');
+                    const txt = document.getElementById('sync-txt');
+                    if (snap.val() === true) {
+                        luz.classList.add('on');
+                        txt.innerText = "Sinc On";
+                        txt.style.color = "#00ff78";
+                    } else {
+                        luz.classList.remove('on');
+                        txt.innerText = "Sinc Off";
+                        txt.style.color = "rgba(255,255,255,0.5)";
+                    }
+                });
+            }
+        } catch (e) { console.log("Firebase no painel off."); }
+
+        let id_agora = null;
+        let confirmPromiseResolve = null;
+
+        document.addEventListener('keydown', e => { if (e.keyCode == 123 || (e.ctrlKey && e.shiftKey && e.keyCode == 73)) e.preventDefault(); });
+
+        // Função de confirmação customizada que funciona como o confirm() nativo
+        function askConfirm(title, msg, btnText = "Sim, Apagar") {
+            document.getElementById('confirm-title').innerText = title;
+            document.getElementById('confirm-msg').innerText = msg;
+            document.getElementById('btn-confirma-acao').innerText = btnText;
+            document.getElementById('custom-confirm').classList.add('show');
+            return new Promise(resolve => { confirmPromiseResolve = resolve; });
+        }
+
+        function resolveConfirm(res) {
+            document.getElementById('custom-confirm').classList.remove('show');
+            if (confirmPromiseResolve) confirmPromiseResolve(res);
+        }
+
+        // Desenha os cards na tela
+        function desenhaPainel() {
+            const agendamentos = JSON.parse(localStorage.getItem('db_agenda') || '[]');
+            const deck = document.getElementById('lista-marcada');
+            if (agendamentos.length === 0) { deck.innerHTML = '<div style="text-align:center;color:rgba(255,255,255,0.3);padding:60px;">Nadinha de nada agendado.</div>'; return; }
+            deck.innerHTML = agendamentos.map(app => `
+                <div class="card-pessoa">
+                    <input type="checkbox" class="check-marcar" data-id="${app.id}">
+                    <div class="corpo-card">
+                        <div class="info-card">
+                            <div>
+                                <div class="nome-cara">${app.name}</div>
+                                <div class="detalhes-cara">${app.cut} • ${app.date}</div>
+                                ${app.price ? `<div style="color:#00ff78; font-weight:900; font-size:13px; margin-top:5px;">R$ ${app.price}</div>` : ''}
+                            </div>
+                            <div style="font-size:11px; color:#fff; background:rgba(255,255,255,0.12); padding:5px 12px; border-radius:8px; font-weight:900; text-transform:uppercase;">${app.status || 'Pendente'}</div>
+                        </div>
+                        <div class="botoes-painel">
+                            <button class="btn-acao btn-confirm" onclick="statusMuda('${app.id}', 'Confirmado')">Aceitar</button>
+                            <button class="btn-acao btn-mudar" onclick="abreTroca('${app.id}')">Mudar</button>
+                            <button class="btn-acao" style="background:rgba(0,180,255,0.08); border-color:rgba(0,180,255,0.3); color:#00b4ff;" onclick="abrePreco('${app.id}')">Preço</button>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Sincroniza o Firebase com o LocalStorage
+        if (database) {
+            database.ref('agendamentos').on('value', (snapshot) => {
+                const data = snapshot.val();
+                const lista = data ? Object.values(data) : [];
+                localStorage.setItem('db_agenda', JSON.stringify(lista));
+                desenhaPainel();
+                
+                // Notificação real pro Barbeiro
+                lista.forEach(app => {
+                    if (app.notifBarber) {
+                        const msg = `O cliente ${app.name} agendou ou respondeu!`;
+                        showAviso(msg, "🔔");
+
+                        // Dispara Notificação de Sistema se tiver permissão
+                        if ("Notification" in window && Notification.permission === "granted") {
+                            new Notification("Novo Agendamento", {
+                                body: msg,
+                                icon: "app_icon_barbearia.png"
+                            });
+                        }
+
+                        database.ref('agendamentos/' + app.id).update({ notifBarber: false });
+                    }
+                });
+            });
+        }
+
+        // Limpa tudo que foi marcado no checkbox
+        async function limpaMarcados() {
+            const marcados = document.querySelectorAll('.check-marcar:checked');
+            if (marcados.length === 0) { showAviso("Marca alguém aí!", "⚠️"); return; }
+            
+            const ok = await askConfirm("Limpar tudo?", `Você vai apagar ${marcados.length} agendamento(s) selecionado(s).`, "LIMPAR");
+            if (!ok) return;
+            
+            const ids = Array.from(marcados).map(c => c.dataset.id);
+            let lista = JSON.parse(localStorage.getItem('db_agenda') || '[]');
+            lista = lista.filter(a => !ids.includes(String(a.id)));
+            localStorage.setItem('db_agenda', JSON.stringify(lista));
+
+            // Remove do Firebase também
+            if (database) {
+                ids.forEach(id => database.ref('agendamentos/' + id).remove());
+            }
+
+            showAviso("Tudo apagado!", "🗑️");
+            desenhaPainel();
+        }
+
+        // Mostra o toast
+        function showAviso(txt, icon="✨") {
+            const t = document.getElementById('toast-aviso');
+            document.getElementById('icone-s').innerText = icon;
+            document.getElementById('txt-s').innerText = txt;
+            t.style.opacity = '1'; t.style.visibility = 'visible'; t.style.transform = 'translateX(-50%) scale(1)';
+            setTimeout(() => { t.style.opacity = '0'; t.style.visibility = 'hidden'; t.style.transform = 'translateX(-50%) scale(0.8)'; }, 3500);
+        }
+
+        // Muda o status (Inicia flow de preço)
+        function statusMuda(id, st) {
+            id_agora = id;
+            if (st === 'Confirmado') {
+                document.getElementById('titulo-confirm').innerText = "Confirmar Agendamento";
+                document.getElementById('modal-confirm-preco').style.opacity = '1';
+                document.getElementById('modal-confirm-preco').style.visibility = 'visible';
+                document.getElementById('input-preco').focus();
+                
+                document.getElementById('btn-salva-confirm').onclick = () => {
+                    const valor = document.getElementById('input-preco').value || '0,00';
+                    finalizaStatus(id, st, valor);
+                };
+            }
+        }
+
+        // Abre modal só pra mudar o preço
+        function abrePreco(id) {
+            id_agora = id;
+            document.getElementById('titulo-confirm').innerText = "Definir Valor";
+            document.getElementById('modal-confirm-preco').style.opacity = '1';
+            document.getElementById('modal-confirm-preco').style.visibility = 'visible';
+            document.getElementById('input-preco').focus();
+            
+            document.getElementById('btn-salva-confirm').onclick = () => {
+                const valor = document.getElementById('input-preco').value || '0,00';
+                let lista = JSON.parse(localStorage.getItem('db_agenda') || '[]');
+                const index = lista.findIndex(a => a.id == id);
+                if (index !== -1) {
+                    lista[index].price = valor;
+                    lista[index].notifClient = true; // Notifica o cliente do novo preço
+                    localStorage.setItem('db_agenda', JSON.stringify(lista));
+                    if (database) database.ref('agendamentos/' + id).update({ price: valor, notifClient: true });
+                    fechaPreco();
+                    desenhaPainel();
+                    showAviso("Preço enviado!", "💰");
+                }
+            };
+        }
+
+        function finalizaStatus(id, st, valor) {
+            let lista = JSON.parse(localStorage.getItem('db_agenda') || '[]');
+            const index = lista.findIndex(a => a.id == id);
+            if (index !== -1) { 
+                lista[index].status = st; 
+                lista[index].price = valor;
+                lista[index].notifClient = true; 
+                localStorage.setItem('db_agenda', JSON.stringify(lista)); 
+                
+                // Update Firebase
+                if (database) database.ref('agendamentos/' + id).update({ 
+                    status: st, 
+                    price: valor,
+                    notifClient: true 
+                });
+                
+                fechaPreco();
+                desenhaPainel(); 
+                showAviso("Confirmado com preço!", "✅");
+            }
+        }
+
+        function fechaPreco() {
+            document.getElementById('modal-confirm-preco').style.opacity = '0';
+            document.getElementById('modal-confirm-preco').style.visibility = 'hidden';
+            document.getElementById('input-preco').value = '';
+        }
+
+        // Modais de proposta de horário
+        function abreTroca(id) { id_agora = id; document.getElementById('modal-hora').style.opacity='1'; document.getElementById('modal-hora').style.visibility='visible'; document.getElementById('input-novo-h').focus(); }
+        function fechaTroca() { document.getElementById('modal-hora').style.opacity='0'; document.getElementById('modal-hora').style.visibility='hidden'; }
+
+        function mandaProposta() {
+            const t = document.getElementById('input-novo-h').value;
+            if (!t) return;
+            
+            // Pergunta o preço também na remarcação
+            document.getElementById('modal-hora').style.opacity='0';
+            document.getElementById('modal-hora').style.visibility='hidden';
+            
+            document.getElementById('titulo-confirm').innerText = "Sugerir Novo Horário";
+            document.getElementById('modal-confirm-preco').style.opacity = '1';
+            document.getElementById('modal-confirm-preco').style.visibility = 'visible';
+            document.getElementById('input-preco').focus();
+
+            document.getElementById('btn-salva-confirm').onclick = () => {
+                const valor = document.getElementById('input-preco').value || '0,00';
+                let lista = JSON.parse(localStorage.getItem('db_agenda') || '[]');
+                const index = lista.findIndex(a => a.id == id_agora);
+                if (index !== -1) { 
+                    lista[index].date = t; 
+                    lista[index].status = 'Sugerido'; 
+                    lista[index].price = valor;
+                    lista[index].notifClient = true; 
+                    localStorage.setItem('db_agenda', JSON.stringify(lista)); 
+
+                    // Update Firebase
+                    if (database) database.ref('agendamentos/' + id_agora).update({ 
+                        date: t, 
+                        status: 'Sugerido', 
+                        price: valor,
+                        notifClient: true 
+                    });
+
+                    fechaPreco();
+                    desenhaPainel(); 
+                    showAviso("Sugerido!", "✉️");
+                }
+            };
+        }
+
+        // Vaza pro home
+        function sairFora() {
+            document.getElementById('page-corpo').style.animation = "fogeDaTela 0.8s forwards";
+            document.getElementById('page-corpo').style.backdropFilter = "none";
+            setTimeout(() => { window.location.href = 'index.html'; }, 780);
+        }
+
+        window.addEventListener('storage', desenhaPainel);
+        desenhaPainel();
+    </script>
+</body>
+</html>
