@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Barbearia | Meus Agendamentos</title>
+    
+    <!-- Configs de App -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Barbearia">
+    <link rel="apple-touch-icon" href="app_icon_barbearia.png">
+    <meta name="theme-color" content="#000000">
+    <link rel="manifest" href="manifest.json">
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-database-compat.js"></script>
+
+    <style>
+        * { 
+            box-sizing: border-box; 
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+        }
+        html, body { 
+            height: 100dvh; margin: 0; padding: 0; 
+            overflow: hidden; background: #000; 
+            -webkit-font-smoothing: antialiased;
+            text-rendering: optimizeLegibility;
+        }
+        body { 
+            display: flex; flex-direction: column; align-items: center; justify-content: center; 
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; position: relative; 
+            transform: translate3d(0,0,0); backface-visibility: hidden;
+            animation: entradaLeve 0.7s ease-out;
+        }
+
+        @keyframes entradaLeve { from { opacity: 0; } to { opacity: 1; } }
+
+        .fundo-img { 
+            position: absolute; inset: 0; background-size: cover; background-position: center; z-index: 1; 
+            background-image: url('Fundo.png'); transform: translate3d(100%, 0, 0); 
+            animation: vemDoLado 0.8s cubic-bezier(0.7, 0, 0.3, 1) forwards; 
+            will-change: transform;
+        }
+        .fundo-preto { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.55); z-index: 2; }
+
+        .caixa-lista {
+            position: relative; z-index: 10; padding: 25px; width: 92%; max-width: 450px;
+            border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 26px;
+            background: rgba(0, 0, 0, 0.75); 
+            backdrop-filter: none !important;
+            transform: translate3d(100vw, 0, 0); 
+            animation: vemDoLado 0.8s cubic-bezier(0.7, 0, 0.3, 1) forwards, ativaBlur 0.4s 0.8s forwards;
+            will-change: transform;
+            contain: paint;
+        }
+
+        @keyframes ativaBlur { to { backdrop-filter: blur(45px); -webkit-backdrop-filter: blur(45px); } }
+
+        .topo { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255, 255, 255, 0.12); padding-bottom: 20px; margin-bottom: 25px; }
+        .topo h1 { color: #fff; margin: 0; font-size: 17px; font-weight: 800; text-transform: uppercase; letter-spacing: 2.5px; }
+
+        .agenda-scroll { max-height: 380px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding-right: 5px; scroll-behavior: smooth; }
+        .agenda-scroll::-webkit-scrollbar { width: 3px; }
+        .agenda-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.25); border-radius: 10px; }
+
+        .card-agendado {
+            background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 18px; padding: 20px; display: flex; flex-direction: column; gap: 14px;
+            animation: sobeItem 0.5s ease forwards; transform: translate3d(0,0,0);
+        }
+        .info-txt { display: flex; justify-content: space-between; align-items: flex-start; }
+        .txt-corte { color: #fff; font-weight: 700; font-size: 16px; }
+        .txt-horario { color: rgba(255, 255, 255, 0.5); font-size: 12px; margin-top: 3px; }
+        
+        .tag-status { font-size: 11px; padding: 5px 12px; border-radius: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: 1.5px; }
+        .pendente { background: rgba(255, 165, 0, 0.18); color: #ffa500; }
+        .confirmado { background: rgba(0, 255, 120, 0.18); color: #00ff78; }
+        .sugerido { background: rgba(0, 150, 255, 0.18); color: #0096ff; }
+
+        .caixa-proposta {
+            background: rgba(0, 150, 255, 0.1); border: 1.5px dashed rgba(0, 150, 255, 0.4);
+            padding: 14px; border-radius: 14px; margin-top: 5px; text-align: center;
+        }
+        .label-p { color: #0096ff; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 5px; display: block; }
+        .txt-p { color: #fff; font-size: 17px; font-weight: 900; }
+
+        .area-botoes { display: flex; gap: 10px; margin-top: 8px; }
+        .btn-card { flex: 1; padding: 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.06); color: #fff; font-size: 12px; font-weight: 800; cursor: pointer; transition: 0.2s; text-transform: uppercase; }
+        .btn-sim { border-color: rgba(0, 255, 120, 0.4); color: #00ff78; }
+        .btn-sim:hover { background: #00ff78; color: #000; }
+        .btn-nao { border-color: rgba(255, 92, 92, 0.4); color: #ff5c5c; }
+        .btn-nao:hover { background: #ff5c5c; color: #000; }
+
+        .btn-vaza { 
+            position: fixed;
+            top: 25px;
+            left: 20px;
+            z-index: 1000;
+            cursor: pointer; 
+            width: 48px; height: 48px;
+            display: flex; align-items: center; justify-content: center;
+            background: rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border-radius: 50%;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            transition: 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        }
+        .btn-vaza:active { transform: scale(0.9); }
+        .btn-vaza svg { width: 26px; height: 26px; stroke: #fff; stroke-width: 3.5; fill: none; }
+
+        /* Indicador de Sincronização */
+        .status-sync {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 2000;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(0, 0, 0, 0.6);
+            padding: 6px 12px;
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            font-size: 10px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: rgba(255, 255, 255, 0.5);
+            pointer-events: none;
+            transition: 0.3s;
+        }
+
+        .luz {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #ff3b30;
+            box-shadow: 0 0 10px #ff3b30;
+            transition: 0.3s;
+        }
+
+        .luz.on {
+            background: #00ff78;
+            box-shadow: 0 0 10px #00ff78;
+        }
+
+        /* Modal de Confirmação Customizado */
+        .modal-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.8); backdrop-filter: blur(15px);
+            z-index: 3000; display: flex; align-items: center; justify-content: center;
+            opacity: 0; visibility: hidden; transition: 0.3s;
+        }
+        .modal-overlay.show { opacity: 1; visibility: visible; }
+        .modal-content {
+            background: rgba(25,25,25,0.98); border: 1px solid rgba(255,255,255,0.15);
+            padding: 35px; border-radius: 30px; width: 90%; max-width: 340px; text-align: center;
+            transform: scale(0.8); transition: 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        .modal-overlay.show .modal-content { transform: scale(1); }
+        .modal-title { color: #fff; font-size: 16px; font-weight: 800; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 15px; }
+        .modal-text { color: rgba(255,255,255,0.6); font-size: 14px; margin-bottom: 25px; line-height: 1.5; }
+        .modal-btns { display: flex; gap: 12px; }
+        .modal-btn { flex: 1; height: 50px; border: none; border-radius: 15px; font-weight: 800; cursor: pointer; transition: 0.2s; text-transform: uppercase; font-size: 12px; }
+        .btn-cancel { background: rgba(255,255,255,0.08); color: #fff; }
+        .btn-confirm-modal { background: #ff3b30; color: #fff; }
+        .btn-confirm-modal:hover { background: #ff453a; }
+
+        @keyframes vemDoLado { from { transform: translate3d(100vw, 0, 0); } to { transform: translate3d(0, 0, 0); } }
+        @keyframes saiPraDireita { to { transform: translate3d(100vw, 0, 0); opacity: 0; } }
+        @keyframes sobeItem { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Ajustes mobile pra não ficar tudo minúsculo ou esticado */
+        @media (max-width: 450px) {
+            .caixa-lista { padding: 22px; width: 90%; }
+            .txt-corte { font-size: 15px; }
+            .txt-p { font-size: 16px; }
+        }
+    </style>
+</head>
+<body id="body-page" oncontextmenu="return false;">
+    
+    <!-- Balaozinho de aviso -->
+    <div id="aviso-toast">
+        <span id="icone-t">✨</span>
+        <span id="texto-t">Aviso</span>
+    </div>
+
+    <!-- Indicador de Nuvem -->
+    <div class="status-sync" id="sync-box">
+        <div class="luz" id="sync-luz"></div>
+        <span id="sync-txt">Sinc Off</span>
+    </div>
+
+    <div class="fundo-img" id="img-fundo"></div>
+    <div class="fundo-preto"></div>
+
+    <!-- Modal de Confirmação -->
+    <div class="modal-overlay" id="custom-confirm">
+        <div class="modal-content">
+            <div class="modal-title" id="confirm-title">Certeza?</div>
+            <div class="modal-text" id="confirm-msg">Quer mesmo cancelar este agendamento?</div>
+            <div class="modal-btns">
+                <button class="modal-btn btn-cancel" onclick="resolveConfirm(false)">Voltar</button>
+                <button class="modal-btn btn-confirm-modal" onclick="resolveConfirm(true)">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="btn-vaza" onclick="vazaDali()">
+        <svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>
+    </div>
+
+    <div class="caixa-lista">
+        <div class="topo">
+            <h1>Agenda</h1>
+        </div>
+        <div class="agenda-scroll" id="lista-apps"></div>
+    </div>
+
+    <script>
+        // --- CONFIGURAÇÃO FIREBASE ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyA4afcARxM7UxR2ya1lnQdfSfmcBzYe8pk",
+            authDomain: "barbearia-cb1f9.firebaseapp.com",
+            databaseURL: "https://barbearia-cb1f9-default-rtdb.firebaseio.com",
+            projectId: "barbearia-cb1f9",
+            storageBucket: "barbearia-cb1f9.firebasestorage.app",
+            messagingSenderId: "698750683688",
+            appId: "1:698750683688:web:883711c2a1a14b081e431d",
+            measurementId: "G-E3NMJV0BVY"
+        };
+        
+        let database = null;
+        try {
+            if (firebaseConfig.databaseURL.includes("SEU_PROJETO")) {
+                console.log("Firebase off.");
+            } else {
+                firebase.initializeApp(firebaseConfig);
+                database = firebase.database();
+
+                // Conexão real
+                database.ref(".info/connected").on("value", (snap) => {
+                    const luz = document.getElementById('sync-luz');
+                    const txt = document.getElementById('sync-txt');
+                    if (snap.val() === true) {
+                        luz.classList.add('on');
+                        txt.innerText = "Sinc On";
+                        txt.style.color = "#00ff78";
+                    } else {
+                        luz.classList.remove('on');
+                        txt.innerText = "Sinc Off";
+                        txt.style.color = "rgba(255,255,255,0.5)";
+                    }
+                });
+            }
+        } catch (e) { console.log("Firebase off."); }
+
+        if (!localStorage.getItem('token_cliente')) { localStorage.setItem('token_cliente', 'c_' + Math.random().toString(36).substr(2, 9)); }
+        const meu_id = localStorage.getItem('token_cliente');
+        
+        let confirmPromiseResolve = null;
+
+        // Função de confirmação
+        function askConfirm(title, msg) {
+            document.getElementById('confirm-title').innerText = title;
+            document.getElementById('confirm-msg').innerText = msg;
+            document.getElementById('custom-confirm').classList.add('show');
+            return new Promise(resolve => { confirmPromiseResolve = resolve; });
+        }
+
+        function resolveConfirm(res) {
+            document.getElementById('custom-confirm').classList.remove('show');
+            if (confirmPromiseResolve) confirmPromiseResolve(res);
+        }
+
+        async function cancelaAgendamento(id) {
+            const ok = await askConfirm("Cancelar?", "Quer mesmo tirar seu horário da lista? O barbeiro vai ficar sabendo.");
+            if (!ok) return;
+            
+            if (database) database.ref('agendamentos/' + id).remove();
+            let db = JSON.parse(localStorage.getItem('db_agenda') || '[]');
+            db = db.filter(a => a.id != id);
+            localStorage.setItem('db_agenda', JSON.stringify(db));
+            mandaAviso("Cancelado!", "🗑️");
+            desenhaLista();
+        }
+
+        // Bloqueio de cliques esquisitos
+        document.addEventListener('keydown', e => { if (e.keyCode == 123 || (e.ctrlKey && e.shiftKey && e.keyCode == 73)) e.preventDefault(); });
+
+        // Puxa o que tem guardado no banco do navegador
+        function desenhaLista() {
+            const db = JSON.parse(localStorage.getItem('db_agenda') || '[]');
+            const meus = db.filter(a => a.clientId === meu_id);
+            const alvo = document.getElementById('lista-apps');
+
+            if (meus.length === 0) { 
+                alvo.innerHTML = '<div style="text-align:center;color:rgba(255,255,255,0.25);padding:60px;font-style:italic;">Nadinha de nada aqui.</div>'; 
+                return; 
+            }
+            
+            
+            alvo.innerHTML = meus.map(item => `
+                <div class="card-agendado">
+                    <div class="info-txt">
+                        <div style="flex:1">
+                            <div class="txt-corte">${item.cut}</div>
+                            <div class="txt-horario">${item.status === 'Sugerido' ? '(Mudamos o horário)' : item.date}</div>
+                            ${item.price ? `<div style="color:#00ff78; font-weight:900; font-size:14px; margin-top:5px;">R$ ${item.price}</div>` : ''}
+                        </div>
+                        <div class="tag-status ${item.status.toLowerCase()}">${item.status}</div>
+                        <div style="margin-left:15px; cursor:pointer; opacity:0.4" onclick="cancelaAgendamento('${item.id}')">
+                            <svg style="width:18px;height:18px;stroke:#fff;stroke-width:2.5;fill:none;" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                        </div>
+                    </div>
+                    ${item.status === 'Sugerido' ? `
+                        <div class="caixa-proposta">
+                            <span class="label-p">Pode nesse horário?</span>
+                            <span class="txt-p">${item.date}</span>
+                        </div>
+                        <div class="area-botoes">
+                            <button class="btn-card btn-sim" onclick="responde('${item.id}', 'Confirmado')">Demorô!</button>
+                            <button class="btn-card btn-nao" onclick="responde('${item.id}', 'Cancelado')">Não rola</button>
+                        </div>
+                    ` : ''}
+                </div>
+            `).join('');
+        }
+
+        // Sincroniza o Firebase com o LocalStorage
+        if (database) {
+            database.ref('agendamentos').on('value', (snapshot) => {
+                const data = snapshot.val();
+                const lista = data ? Object.values(data) : [];
+                localStorage.setItem('db_agenda', JSON.stringify(lista));
+                desenhaLista();
+                
+                // Notificação real no celular
+                lista.forEach(app => {
+                    if (app.clientId === meu_id && app.notifClient) {
+                        const msg = `O barbeiro ${app.status.toLowerCase()} seu horário!`;
+                        mandaAviso(msg, "🔔");
+                        
+                        // Dispara Notificação de Sistema se tiver permissão
+                        if ("Notification" in window && Notification.permission === "granted") {
+                            new Notification("Agendamento Barbearia", {
+                                body: msg,
+                                icon: "app_icon_barbearia.png"
+                            });
+                        }
+                        
+                        database.ref('agendamentos/' + app.id).update({ notifClient: false });
+                    }
+                });
+            });
+        }
+
+        // Responde a proposta do barbeiro
+        function responde(id_p, novo_status) {
+            let dados = JSON.parse(localStorage.getItem('db_agenda') || '[]');
+            const index = dados.findIndex(a => a.id == id_p);
+            if (index !== -1) {
+                if (novo_status === 'Cancelado') { 
+                    dados.splice(index, 1); 
+                    if (database) database.ref('agendamentos/' + id_p).remove();
+                } 
+                else { 
+                    dados[index].status = novo_status;
+                    dados[index].notifBarber = true; 
+                    if (database) database.ref('agendamentos/' + id_p).update({ status: novo_status, notifBarber: true });
+                }
+                localStorage.setItem('db_agenda', JSON.stringify(dados));
+                mandaAviso(novo_status === 'Cancelado' ? "Apagado!" : "Confirmadíssimo!", "✅");
+                desenhaLista();
+            }
+        }
+
+        // Toast de aviso
+        function mandaAviso(msg, icon="✨") {
+            const t = document.getElementById('aviso-toast');
+            document.getElementById('icone-t').innerText = icon;
+            document.getElementById('texto-t').innerText = msg;
+            t.style.opacity = '1'; t.style.visibility = 'visible'; t.style.transform = 'translateX(-50%) scale(1)';
+            setTimeout(() => { t.style.opacity = '0'; t.style.visibility = 'hidden'; t.style.transform = 'translateX(-50%) scale(0.8)'; }, 3500);
+        }
+
+        window.addEventListener('storage', desenhaLista);
+        desenhaLista();
+
+        // Volta pra home com estilo
+        function vazaDali() {
+            document.getElementById('body-page').style.animation = "saiPraDireita 0.8s forwards";
+            document.getElementById('img-fundo').style.backdropFilter = "none";
+            setTimeout(() => { window.location.href = 'index.html'; }, 780);
+        }
+    </script>
+</body>
+</html>
